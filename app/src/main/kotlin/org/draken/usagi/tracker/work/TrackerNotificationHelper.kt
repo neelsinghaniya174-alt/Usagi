@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationCompat.VISIBILITY_PRIVATE
@@ -97,6 +98,8 @@ class TrackerNotificationHelper @Inject constructor(
 			setShortcutId(manga.id.toString())
 			applyCommonSettings(this)
 		}
+
+		Log.i("TrackerNotif", "Created notification for ${manga.title} with ${newChapters.size} new chapters")
 		return NotificationInfo(id, TAG, builder.build(), manga, newChapters.size)
 	}
 
@@ -147,6 +150,8 @@ class TrackerNotificationHelper @Inject constructor(
 			)
 			applyCommonSettings(this)
 		}
+
+		Log.i("TrackerNotif", "Created group notification for ${notifications.size} manga updates")
 		return builder.build()
 	}
 

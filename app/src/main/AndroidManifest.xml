@@ -176,7 +176,7 @@
 			<intent-filter>
 				<action android:name="android.intent.action.VIEW" />
 				<category android:name="android.intent.category.DEFAULT" />
-				<data android:scheme="content" android:mimeType="application/java-archive" />
+				<data android:scheme="content" android:host="*" android:mimeType="application/java-archive" />
 				<data android:scheme="file" android:mimeType="application/java-archive" />
 				<data android:scheme="content" android:mimeType="application/x-java-archive" />
 				<data android:scheme="file" android:mimeType="application/x-java-archive" />

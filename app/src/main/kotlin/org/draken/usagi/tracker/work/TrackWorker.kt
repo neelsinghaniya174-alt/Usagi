@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.util.Log
 import android.provider.Settings
 import androidx.annotation.CheckResult
 import androidx.core.app.NotificationChannelCompat
@@ -30,16 +31,16 @@ import dagger.Reusable
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.mapNotNull
-import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.draken.usagi.BuildConfig
 import org.draken.usagi.R
 import org.draken.usagi.core.db.MangaDatabase
@@ -54,7 +55,6 @@ import org.draken.usagi.core.util.ext.awaitUniqueWorkInfoByName
 import org.draken.usagi.core.util.ext.checkNotificationPermission
 import org.draken.usagi.core.util.ext.onEachIndexed
 import org.draken.usagi.core.util.ext.printStackTraceDebug
-import org.draken.usagi.core.util.ext.trySetForeground
 import org.draken.usagi.download.ui.worker.DownloadTask
 import org.draken.usagi.download.ui.worker.DownloadWorker
 import org.draken.usagi.local.data.LocalMangaRepository
@@ -90,7 +90,13 @@ class TrackWorker @AssistedInject constructor(
 
 	override suspend fun doWork(): Result {
 		notificationHelper.updateChannels()
-		val isForeground = trySetForeground()
+		val isForeground = try {
+			setForeground(getForegroundInfo())
+			true
+		} catch (e:Exception) {
+			Log.w("TrackWorker", "Could not set foreground service", e)
+			false
+		}
 		return try {
 			doWorkImpl(isFullRun = isForeground && TAG_ONESHOT in tags)
 		} catch (e: CancellationException) {
@@ -114,64 +120,120 @@ class TrackWorker @AssistedInject constructor(
 			return Result.success()
 		}
 
-		val notifications = checkUpdatesAsync(tracks)
-		if (notifications.isNotEmpty() && applicationContext.checkNotificationPermission(null)) {
-			val groupNotification = notificationHelper.createGroupNotification(notifications)
-			notifications.forEach { notificationManager.notify(it.tag, it.id, it.notification) }
-			if (groupNotification != null) {
-				notificationManager.notify(TAG, TrackerNotificationHelper.GROUP_NOTIFICATION_ID, groupNotification)
-			}
-		}
+		checkUpdatesAsync(tracks)
 		return Result.success()
 	}
 
 	@CheckResult
-	private suspend fun checkUpdatesAsync(tracks: List<MangaTracking>): List<NotificationInfo> {
+	private suspend fun checkUpdatesAsync(tracks: List<MangaTracking>) {
 		val semaphore = Semaphore(MAX_PARALLELISM)
-		return channelFlow {
-			for (track in tracks) {
-				launch {
-					semaphore.withPermit {
-						send(
-							runCatchingCancellable {
-								checkNewChaptersUseCase.invoke(track)
-							}.getOrElse { error ->
-								MangaUpdates.Failure(
+		val groupNotifications = mutableListOf<NotificationInfo>()
+
+		try {
+			channelFlow {
+				for (track in tracks) {
+					launch {
+						semaphore.withPermit {
+							// 1. Initial Attempt
+							var result = runCatchingCancellable {
+								val updateResult = withTimeoutOrNull(60_000L) {
+									checkNewChaptersUseCase.invoke(track)
+								}
+								updateResult ?: MangaUpdates.Failure(
 									manga = track.manga,
-									error = error,
+									error = Exception("Connection timed out after 60 seconds"),
 								)
-							},
+							}
+
+							// 2. 🆕 NEW: The Rate Limit Retry Trap
+							if (result.exceptionOrNull() is org.koitharu.kotatsu.parsers.exception.TooManyRequestExceptions) {
+								Log.w("TrackWorker", "Rate limited for ${track.manga.title}. Pausing 5s and retrying...")
+								delay(5_000L) // Wait 5 seconds (not 30, so we don't hog the semaphore)
+
+								// Try one more time!
+								result = runCatchingCancellable {
+									val retryUpdate = withTimeoutOrNull(60_000L) {
+										checkNewChaptersUseCase.invoke(track)
+									}
+									retryUpdate ?: MangaUpdates.Failure(
+										manga = track.manga,
+										error = Exception("Connection timed out after 60 seconds"),
+									)
+								}
+							}
+
+							// 3. Send the final result (whether it was attempt 1 or attempt 2)
+							send(
+								result.getOrElse { error ->
+									MangaUpdates.Failure(
+										manga = track.manga,
+										error = error,
+									)
+								}
+							)
+						}
+					}
+				}
+			}.onEachIndexed { index, it ->
+				// ... rest of the code stays the same ...
+				if (applicationContext.checkNotificationPermission(WORKER_CHANNEL_ID)) {
+					notificationManager.notify(
+						WORKER_NOTIFICATION_ID,
+						createWorkerNotification(tracks.size, index + 1)
+					)
+				}
+
+				when (it) {
+					is MangaUpdates.Failure -> {
+						val e = it.error
+						if (e is CloudFlareException) {
+							captchaHandler.handle(e)
+						}
+					}
+
+					is MangaUpdates.Success -> {
+						processDownload(it)
+
+						if (it.isValid && it.isNotEmpty()) {
+							val notificationInfo = notificationHelper.createNotification(
+								manga = it.manga,
+								newChapters = it.newChapters,
+							)
+
+							if (notificationInfo != null &&
+								applicationContext.checkNotificationPermission(TrackerNotificationHelper.CHANNEL_ID)) {
+								notificationManager.notify(
+									notificationInfo.tag,
+									notificationInfo.id,
+									notificationInfo.notification
+								)
+
+								synchronized(groupNotifications) {
+									groupNotifications.add(notificationInfo)
+								}
+							}
+						}
+					}
+				}
+			}.collect { }
+
+		} catch (e: CancellationException) {
+			e.printStackTraceDebug()
+		} finally {
+			withContext(NonCancellable) {
+				if (groupNotifications.size > 1 &&
+					applicationContext.checkNotificationPermission(TrackerNotificationHelper.CHANNEL_ID)) {
+					val groupNotification = notificationHelper.createGroupNotification(groupNotifications)
+					if (groupNotification != null) {
+						notificationManager.notify(
+							TAG,
+							TrackerNotificationHelper.GROUP_NOTIFICATION_ID,
+							groupNotification
 						)
 					}
 				}
 			}
-		}.onEachIndexed { index, it ->
-			if (applicationContext.checkNotificationPermission(WORKER_CHANNEL_ID)) {
-				notificationManager.notify(WORKER_NOTIFICATION_ID, createWorkerNotification(tracks.size, index + 1))
-			}
-			when (it) {
-				is MangaUpdates.Failure -> {
-					val e = it.error
-					if (e is CloudFlareException) {
-						captchaHandler.handle(e)
-					}
-				}
-
-				is MangaUpdates.Success -> processDownload(it)
-			}
-		}.mapNotNull {
-			when (it) {
-				is MangaUpdates.Failure -> null
-				is MangaUpdates.Success -> if (it.isValid && it.isNotEmpty()) {
-					notificationHelper.createNotification(
-						manga = it.manga,
-						newChapters = it.newChapters,
-					)
-				} else {
-					null
-				}
-			}
-		}.toList()
+		}
 	}
 
 	override suspend fun getForegroundInfo(): ForegroundInfo {
@@ -284,7 +346,7 @@ class TrackWorker @AssistedInject constructor(
 			val constraints = createConstraints()
 			val runCount = dbProvider.get().getTracksDao().getTracksCount()
 			val runsPerFullCheck = (runCount / BATCH_SIZE.toFloat()).toIntUp().coerceAtLeast(1)
-			val interval = (18 / runsPerFullCheck / frequency).roundToInt().coerceAtLeast(2)
+			val interval = (18 / runsPerFullCheck / frequency).roundToInt().coerceAtLeast(3)
 			val request = PeriodicWorkRequestBuilder<TrackWorker>(interval.toLong(), TimeUnit.HOURS)
 				.setConstraints(constraints)
 				.addTag(TAG)
@@ -338,7 +400,7 @@ class TrackWorker @AssistedInject constructor(
 		const val WORKER_NOTIFICATION_ID = 35
 		const val TAG = "tracking"
 		const val TAG_ONESHOT = "tracking_oneshot"
-		const val MAX_PARALLELISM = 6
+		const val MAX_PARALLELISM = 5
 		val BATCH_SIZE = if (BuildConfig.DEBUG) 20 else 46
 		const val SETTINGS_ACTION_CODE = 5
 	}
