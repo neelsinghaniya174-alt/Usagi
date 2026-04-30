@@ -3,15 +3,23 @@ package org.draken.usagi
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
+import android.os.Bundle
 import android.os.StrictMode
 import androidx.core.content.edit
 import androidx.fragment.app.strictmode.FragmentStrictMode
-import leakcanary.LeakCanary
 import dagger.hilt.android.HiltAndroidApp
+import leakcanary.LeakCanary
 import org.draken.usagi.core.BaseApp
+import org.draken.usagi.core.model.MangaSourceRegistry
+import org.draken.usagi.core.plugin.PluginRegistry
+import javax.inject.Inject
 
 @HiltAndroidApp
 class UsagiApp : BaseApp() {
+
+	// 🆕 Inject the PluginRegistry
+	@Inject
+	lateinit var pluginRegistry: PluginRegistry
 
 	var isLeakCanaryEnabled: Boolean
 		get() = getDebugPreferences(this).getBoolean(KEY_LEAK_CANARY, true)
@@ -19,6 +27,13 @@ class UsagiApp : BaseApp() {
 			getDebugPreferences(this).edit { putBoolean(KEY_LEAK_CANARY, value) }
 			configureLeakCanary()
 		}
+
+	// 🆕 Override onCreate to initialize plugin registry
+	override fun onCreate() {
+		super.onCreate()
+		MangaSourceRegistry.setPluginRegistry(pluginRegistry)
+		MangaSourceRegistry.refreshPlugins()
+	}
 
 	override fun attachBaseContext(base: Context) {
 		super.attachBaseContext(base)

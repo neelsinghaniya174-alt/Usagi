@@ -944,4 +944,6 @@
 	<string name="plugin_not_found">No plugin found for source: %1$s</string>
 	<string name="set_plugin_name">Set name for this plugin</string>
 	<string name="unknown_source">Unknown source: %1$s</string>
+	<string name="browse_keiyoushi">Browse Keiyoushi Extensions</string>
+	<string name="browse_keiyoushi_summary">Install extensions from the Keiyoushi repository</string>
 </resources>

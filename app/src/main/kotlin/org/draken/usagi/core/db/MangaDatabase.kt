@@ -16,6 +16,7 @@ import org.draken.usagi.core.db.dao.ChaptersDao
 import org.draken.usagi.core.db.dao.MangaDao
 import org.draken.usagi.core.db.dao.MangaSourcesDao
 import org.draken.usagi.core.db.dao.PreferencesDao
+import org.draken.usagi.core.db.dao.PluginDao
 import org.draken.usagi.core.db.dao.TagsDao
 import org.draken.usagi.core.db.dao.TrackLogsDao
 import org.draken.usagi.core.db.entity.ChapterEntity
@@ -23,6 +24,7 @@ import org.draken.usagi.core.db.entity.MangaEntity
 import org.draken.usagi.core.db.entity.MangaPrefsEntity
 import org.draken.usagi.core.db.entity.MangaSourceEntity
 import org.draken.usagi.core.db.entity.MangaTagsEntity
+import org.draken.usagi.core.db.entity.PluginEntity
 import org.draken.usagi.core.db.entity.TagEntity
 import org.draken.usagi.core.db.migrations.Migration10To11
 import org.draken.usagi.core.db.migrations.Migration11To12
@@ -77,7 +79,7 @@ const val DATABASE_VERSION = 27
 		MangaEntity::class, TagEntity::class, HistoryEntity::class, MangaTagsEntity::class, ChapterEntity::class,
 		FavouriteCategoryEntity::class, FavouriteEntity::class, MangaPrefsEntity::class, TrackEntity::class,
 		TrackLogEntity::class, SuggestionEntity::class, BookmarkEntity::class, ScrobblingEntity::class,
-		MangaSourceEntity::class, StatsEntity::class, LocalMangaIndexEntity::class,
+		MangaSourceEntity::class, StatsEntity::class, LocalMangaIndexEntity::class, PluginEntity::class,
 	],
 	version = DATABASE_VERSION,
 )
@@ -112,6 +114,8 @@ abstract class MangaDatabase : RoomDatabase() {
 	abstract fun getLocalMangaIndexDao(): LocalMangaIndexDao
 
 	abstract fun getChaptersDao(): ChaptersDao
+
+	abstract fun PluginDao(): PluginDao
 }
 
 fun getDatabaseMigrations(context: Context): Array<Migration> = arrayOf(

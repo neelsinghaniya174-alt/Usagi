@@ -78,6 +78,12 @@
 				android:name="android.app.default_searchable"
 				android:value="org.draken.usagi.search.ui.multi.MultiSearchActivity" />
 		</activity>
+
+		<activity
+			android:name=".settings.sources.manage.extensions.ExtensionsBrowserActivity"
+			android:label="Keiyoushi Extensions"
+			android:exported="false"/>
+
 		<activity
 			android:name="org.draken.usagi.details.ui.DetailsActivity"
 			android:exported="true">

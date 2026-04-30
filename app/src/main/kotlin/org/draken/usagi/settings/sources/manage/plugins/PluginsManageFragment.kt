@@ -5,6 +5,7 @@ import android.text.InputType
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.content.Intent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.graphics.Insets
 import androidx.core.view.WindowInsetsCompat
@@ -32,6 +33,7 @@ import org.draken.usagi.databinding.DialogImportBinding
 import org.draken.usagi.databinding.FragmentSettingsSourcesBinding
 import org.draken.usagi.main.ui.owners.AppBarOwner
 import kotlin.coroutines.resume
+import org.draken.usagi.settings.sources.manage.extensions.ExtensionsBrowserActivity
 
 @AndroidEntryPoint
 class PluginsManageFragment :
@@ -120,6 +122,12 @@ class PluginsManageFragment :
 		binding.buttonDir.title = getString(R.string.import_from_github)
 		binding.buttonDir.subtitle = getString(R.string.import_github_summary)
 		binding.buttonDir.setIconResource(R.drawable.ic_open_external)
+		//New: Keiyoushi button
+		binding.buttonKeiyoushi.title = getString(R.string.browse_keiyoushi)
+		binding.buttonKeiyoushi.subtitle = getString(R.string.browse_keiyoushi_summary)
+		binding.buttonKeiyoushi.setIconResource(R.drawable.ic_extension)
+
+
 		val dialog = buildAlertDialog(requireContext()) {
 			setTitle(R.string._import)
 			setView(binding.root)
@@ -137,6 +145,14 @@ class PluginsManageFragment :
 				onResult = ::showImportResult
 			)
 		}
+		//New: Keiyoushi click
+		binding.buttonKeiyoushi.setOnClickListener {
+			dialog.dismiss()
+			val intent = Intent(requireContext(), ExtensionsBrowserActivity::class.java)
+			startActivity(intent)
+
+		}
+
 		dialog.show()
 	}
 

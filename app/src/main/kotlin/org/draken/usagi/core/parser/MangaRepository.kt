@@ -12,6 +12,8 @@ import org.draken.usagi.core.model.UnknownMangaSource
 import org.draken.usagi.core.parser.external.ExternalMangaRepository
 import org.draken.usagi.core.parser.external.ExternalMangaSource
 import org.draken.usagi.local.data.LocalMangaRepository
+import org.draken.usagi.settings.sources.manage.plugins.bridge.TachiyomiSourceAdapter
+import org.draken.usagi.settings.sources.manage.plugins.bridge.TachiyomiParserAdapter
 import org.koitharu.kotatsu.parsers.MangaLoaderContext
 import org.koitharu.kotatsu.parsers.model.Manga
 import org.koitharu.kotatsu.parsers.model.MangaChapter
@@ -109,6 +111,12 @@ interface MangaRepository {
 				)
 			} else {
 				EmptyMangaRepository(source)
+			}
+
+			// Handle Tachiyomi adapter separately
+			is TachiyomiSourceAdapter -> {
+				val parser = TachiyomiParserAdapter(source)
+				ParserMangaRepository(parser, mirrorSwitcher, contentCache)
 			}
 
 			else -> ParserMangaRepository(

@@ -32,4 +32,16 @@
 		app:subtitle="@string/folder_with_images_import_description"
 		app:title="@string/folder_with_images" />
 
+	<org.draken.usagi.core.ui.widgets.TwoLinesItemView
+		android:id="@+id/button_keiyoushi"
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:drawablePadding="?android:listPreferredItemPaddingStart"
+		android:minHeight="?android:listPreferredItemHeightSmall"
+		android:paddingStart="?android:listPreferredItemPaddingStart"
+		android:paddingEnd="?android:listPreferredItemPaddingEnd"
+		app:icon="@drawable/ic_extension"
+		app:subtitle="@string/browse_keiyoushi_summary"
+		app:title="@string/browse_keiyoushi" />
+
 </LinearLayout>

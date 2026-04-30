@@ -29,4 +29,7 @@
     <string name="remote_sources">Manga sources</string>
     <string name="loading_">Loading…</string>
     <string name="computing_">Computing…</string>
+	<string name="browse_keiyoushi">Browse Keiyoushi Extensions</string>
+	<string name="browse_keiyoushi_summary">Install extensions from the Keiyoushi repository</string>
+
 </resources>

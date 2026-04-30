@@ -16,10 +16,12 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.draken.usagi.R
 import org.draken.usagi.core.db.MangaDatabase
+import org.draken.usagi.core.model.MangaSourceRegistry      // 🆕 import
 import org.draken.usagi.core.model.PluginSourceKeyNormalizer
 import org.draken.usagi.core.network.BaseHttpClient
 import org.draken.usagi.core.parser.DynamicParserManager
 import org.draken.usagi.core.parser.PluginFileLoader
+import org.draken.usagi.core.plugin.PluginRegistry          // 🆕 import
 import org.draken.usagi.core.ui.BaseViewModel
 import org.draken.usagi.filter.data.SavedFiltersRepository
 import org.json.JSONArray
@@ -37,6 +39,7 @@ class PluginsManageViewModel @Inject constructor(
 	@param:BaseHttpClient private val okHttpClient: OkHttpClient,
 	private val database: MangaDatabase,
 	private val savedFiltersRepository: SavedFiltersRepository,
+	private val pluginRegistry: PluginRegistry             // 🆕 inject PluginRegistry
 ) : BaseViewModel() {
 
 	val content = MutableStateFlow<List<PluginManageItem>>(emptyList())
@@ -73,6 +76,9 @@ class PluginsManageViewModel @Inject constructor(
 				pluginsSnapshot = updatedPlugins
 				publishFiltered()
 			}
+
+			// 🆕 Refresh global source list after loading plugins
+			MangaSourceRegistry.refreshPlugins()
 		}
 	}
 
@@ -94,7 +100,12 @@ class PluginsManageViewModel @Inject constructor(
 			clearGithubMeta(safeName)
 			reloadPlugins(pluginsDir)
 		}.isSuccess
-	}.also { if (it) refresh() }
+	}.also {
+		if (it) {
+			refresh()
+			MangaSourceRegistry.refreshPlugins()      // 🆕 refresh after import
+		}
+	}
 
 	suspend fun importFromGithub(release: ExternalPluginDto, fileName: String = release.fileName): Boolean =
 		withContext(Dispatchers.Default) {
@@ -113,7 +124,10 @@ class PluginsManageViewModel @Inject constructor(
 				reloadPlugins(pluginsDir)
 			}.isSuccess
 		}.also {
-			if (it) refresh()
+			if (it) {
+				refresh()
+				MangaSourceRegistry.refreshPlugins()      // 🆕 refresh after GitHub import
+			}
 		}
 
 	fun importPlugin(
@@ -164,7 +178,9 @@ class PluginsManageViewModel @Inject constructor(
 			refresh()
 			true
 		} else {
-			importFromGithub(release, item.jarName)
+			importFromGithub(release, item.jarName).also {
+				if (it) MangaSourceRegistry.refreshPlugins()   // 🆕 refresh after update
+			}
 		}
 	}
 
@@ -172,9 +188,14 @@ class PluginsManageViewModel @Inject constructor(
 		runCatchingCancellable {
 			DynamicParserManager.deletePlugin(context, item.jarName)
 			clearGithubMeta(item.jarName)
+			// 🆕 Also unload any APK-based plugin with the same jar name (if applicable)
+			pluginRegistry.unloadPlugin(item.jarName.removeSuffix(".jar"))
 		}.isSuccess
 	}.also {
-		if (it) refresh()
+		if (it) {
+			refresh()
+			MangaSourceRegistry.refreshPlugins()          // 🆕 refresh after deletion
+		}
 	}
 
 	fun sanitizeJarFileName(rawName: String): String {
@@ -208,7 +229,7 @@ class PluginsManageViewModel @Inject constructor(
 		}
 		val filtered = all.filter { plugin ->
 			plugin.jarName.contains(q, ignoreCase = true) ||
-					plugin.repository?.contains(q, ignoreCase = true) == true
+				plugin.repository?.contains(q, ignoreCase = true) == true
 		}
 		content.value = filtered.ifEmpty {
 			listOf(PluginManageItem.Placeholder(titleResId = R.string.nothing_found, summaryResId = null))
@@ -252,7 +273,7 @@ class PluginsManageViewModel @Inject constructor(
 				val pathSegments = response.request.url.pathSegments
 				val tagIndex = pathSegments.indexOf("tag")
 				val tag = if (tagIndex >= 0) pathSegments.getOrNull(tagIndex + 1)
-				          else pathSegments.lastOrNull()
+				else pathSegments.lastOrNull()
 				tag?.takeIf { it.isNotBlank() }
 			}
 		}.getOrNull()

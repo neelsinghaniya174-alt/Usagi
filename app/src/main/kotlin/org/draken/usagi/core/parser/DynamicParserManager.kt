@@ -1,6 +1,7 @@
 package org.draken.usagi.core.parser
 
 import android.content.Context
+import android.util.Log
 import dalvik.system.DexClassLoader
 import org.draken.usagi.R
 import org.draken.usagi.core.model.MangaSourceRegistry
@@ -51,6 +52,47 @@ object DynamicParserManager {
     private val methodCache = ConcurrentHashMap<Pair<Method, Class<*>>, Method>()
 
     @Throws(Exception::class)
+
+	fun loadApkPlugin(context: Context, apkPath: String, packageName: String): Boolean {
+		Log.d("DynamicParser", "loadApkPlugin called for $packageName at $apkPath")
+		return try {
+			val cacheDir = context.codeCacheDir.absolutePath
+			val parent = context.classLoader
+			val cl = PluginClassLoader(apkPath, cacheDir, null, parent)
+			val factory = cl.loadClass("org.koitharu.kotatsu.parsers.MangaParserFactoryKt")
+			val enumC = cl.loadClass("org.koitharu.kotatsu.parsers.model.MangaParserSource")
+			val ctxC = cl.loadClass("org.koitharu.kotatsu.parsers.MangaLoaderContext")
+			val newParser = factory.getMethod("newParser", enumC, ctxC)
+
+			var addedCount = 0  // Declared inside try, used within try
+			enumC.enumConstants?.forEach { c ->
+				if (c is MangaSource) {
+					val w = PluginMangaSource(c, packageName)
+					MangaSourceRegistry.sources.removeAll { it is PluginMangaSource && it.jarName == packageName }
+					MangaSourceRegistry.sources.add(w)
+					newParserMethods[w.name] = newParser
+					Log.d("DynamicParser", "Added source: ${w.name} (${c.title})")
+					addedCount++
+				}
+			}
+			classLoaders[packageName] = cl
+			MangaSourceRegistry.incrementVersion()
+			MangaSourceRegistry.updates.tryEmit(Unit)
+			Log.d("DynamicParser", "loadApkPlugin success, added $addedCount sources")
+			true
+		} catch (e: Exception) {
+			Log.e("DynamicParser", "loadApkPlugin failed", e)
+			false
+		}
+	}
+
+	fun unloadApkPlugin(packageName: String) {
+		classLoaders.remove(packageName)
+		MangaSourceRegistry.sources.removeAll { it is PluginMangaSource && it.jarName == packageName }
+		newParserMethods.keys.removeAll { it.startsWith("$packageName:") }
+		MangaSourceRegistry.incrementVersion()
+		MangaSourceRegistry.updates.tryEmit(Unit)
+	}
     fun loadParsersFromDirectory(context: Context, pluginDir: File) {
         val cacheDir = context.codeCacheDir.absolutePath
         val parent = context.classLoader
